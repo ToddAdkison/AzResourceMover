@@ -1,0 +1,273 @@
+[
+  {
+    "resourceType": "Microsoft.DataFactory/factories",
+    "category": "Service-level unsupported",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Use Data Factory's own clone/copy features"
+  },
+  {
+    "resourceType": "Microsoft.Synapse/workspaces/*",
+    "category": "Service-level unsupported",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Use Synapse deployment pipelines or workspace publish"
+  },
+  {
+    "resourceType": "Microsoft.MachineLearningServices/workspaces/*",
+    "category": "Service-level unsupported",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Use ML service SDK/CLI for deployment"
+  },
+  {
+    "resourceType": "Microsoft.Kubernetes/*",
+    "category": "Service-level unsupported",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Use Kubernetes manifests or Helm"
+  },
+
+  {
+    "resourceType": "Microsoft.Authorization/roleAssignments",
+    "category": "Identity / RBAC",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Recreate role assignments after deployment"
+  },
+  {
+    "resourceType": "Microsoft.Authorization/roleDefinitions",
+    "category": "Identity / RBAC",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Define roles via scripts"
+  },
+  {
+    "resourceType": "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials",
+    "category": "Identity / RBAC",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Recreate federated credentials manually"
+  },
+
+  {
+    "resourceType": "Microsoft.KeyVault/vaults/accessPolicies",
+    "category": "Security-sensitive",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Re-apply access policies after deployment"
+  },
+  {
+    "resourceType": "Microsoft.KeyVault/vaults/secrets",
+    "category": "Security-sensitive",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Recreate secrets securely post-deployment"
+  },
+
+  {
+    "resourceType": "Microsoft.AppConfiguration/configurationStores/*",
+    "category": "Data-plane",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Use App Configuration import/export features"
+  },
+  {
+    "resourceType": "Microsoft.Storage/storageAccounts/blobServices/containers",
+    "category": "Data-plane",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Recreate containers or migrate data"
+  },
+  {
+    "resourceType": "Microsoft.Storage/storageAccounts/fileServices/shares",
+    "category": "Data-plane",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Recreate shares or migrate data"
+  },
+
+  {
+    "resourceType": "Microsoft.DocumentDB/databaseAccounts/graphs",
+    "category": "Data-plane",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Create via Gremlin or service tools"
+  },
+  {
+    "resourceType": "Microsoft.DocumentDB/databaseAccounts/mongodbRoleDefinitions",
+    "category": "Data-plane",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Define roles using MongoDB commands"
+  },
+  {
+    "resourceType": "Microsoft.DocumentDB/databaseAccounts/mongodbUserDefinitions",
+    "category": "Data-plane",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Define users using MongoDB commands"
+  },
+
+  {
+    "resourceType": "Microsoft.RecoveryServices/vaults/certificates",
+    "category": "Backup / DR",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Upload certificates after deployment"
+  },
+  {
+    "resourceType": "Microsoft.RecoveryServices/vaults/extendedInformation",
+    "category": "Backup / DR",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Configure extended information post-deployment"
+  },
+  {
+    "resourceType": "Microsoft.DataProtection/backupVaults/backupInstances",
+    "category": "Backup / DR",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Reconfigure backup instances manually"
+  },
+
+  {
+    "resourceType": "Microsoft.Security/alerts",
+    "category": "Monitoring / Security",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Recreate alerts or policies"
+  },
+  {
+    "resourceType": "Microsoft.Security/automations",
+    "category": "Monitoring / Security",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Recreate automation rules"
+  },
+
+  {
+    "resourceType": "Microsoft.DevTestLab/labs/artifacts",
+    "category": "Dev/Test",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Reconfigure artifacts manually"
+  },
+  {
+    "resourceType": "Microsoft.DevTestLab/labs/users",
+    "category": "Dev/Test",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Reassign users"
+  },
+  {
+    "resourceType": "Microsoft.DevTestLab/labs/policies",
+    "category": "Dev/Test",
+    "exportBehavior": "Consistently non-exportable",
+    "action": "Recreate policies"
+  },
+
+  {
+    "resourceType": "Microsoft.Web/sites/functions",
+    "category": "Web Apps / Functions",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Deploy functions separately"
+  },
+  {
+    "resourceType": "Microsoft.Web/sites/extensions",
+    "category": "Web Apps / Functions",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Deploy extensions post-deployment"
+  },
+  {
+    "resourceType": "Microsoft.Web/sites/siteextensions",
+    "category": "Web Apps / Functions",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Install site extensions manually"
+  },
+  {
+    "resourceType": "Microsoft.Web/sites/sitecontainers",
+    "category": "Web Apps / Functions",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Configure manually after deployment"
+  },
+  {
+    "resourceType": "Microsoft.Web/sites/hybridconnection",
+    "category": "Web Apps / Functions",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate hybrid connections post-deployment"
+  },
+
+  {
+    "resourceType": "Microsoft.Web/connections",
+    "category": "Logic Apps / Integrations",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate API connections"
+  },
+  {
+    "resourceType": "Microsoft.Logic/integrationAccounts/*",
+    "category": "Logic Apps / Integrations",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Deploy integration artifacts separately"
+  },
+
+  {
+    "resourceType": "Microsoft.Insights/components/pricingPlans",
+    "category": "Monitoring",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Set pricing tier manually"
+  },
+  {
+    "resourceType": "Microsoft.Insights/components/myanalyticsItems",
+    "category": "Monitoring",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate manually or via script"
+  },
+  {
+    "resourceType": "Microsoft.Insights/diagnosticSettings",
+    "category": "Monitoring",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Reapply diagnostic settings"
+  },
+  {
+    "resourceType": "Microsoft.Insights/actionGroups",
+    "category": "Monitoring",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate action groups"
+  },
+
+  {
+    "resourceType": "Microsoft.ApiManagement/service/subscriptions",
+    "category": "API Management",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate subscriptions"
+  },
+  {
+    "resourceType": "Microsoft.ApiManagement/service/users",
+    "category": "API Management",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate users"
+  },
+  {
+    "resourceType": "Microsoft.ApiManagement/service/groups",
+    "category": "API Management",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate groups"
+  },
+  {
+    "resourceType": "Microsoft.ApiManagement/service/backends",
+    "category": "API Management",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate backends"
+  },
+
+  {
+    "resourceType": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+    "category": "Networking",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Reconfigure DNS zone groups"
+  },
+  {
+    "resourceType": "Microsoft.Network/applicationGateways/privateLinkConfigurations",
+    "category": "Networking",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate configuration"
+  },
+  {
+    "resourceType": "Microsoft.ContainerService/managedClusters/privateEndpointConnections",
+    "category": "Networking",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Approve connections manually"
+  },
+
+  {
+    "resourceType": "Microsoft.EventHub/namespaces/eventhubs/authorizationRules",
+    "category": "Messaging",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate authorization rules"
+  },
+  {
+    "resourceType": "Microsoft.ServiceBus/namespaces/queues/authorizationRules",
+    "category": "Messaging",
+    "exportBehavior": "Inconsistent / partial",
+    "action": "Recreate authorization rules"
+  }
+]
