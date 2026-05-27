@@ -197,7 +197,7 @@ function Write-DebugResourceList {
 
     if ($script:DebugLogPath -eq "") { return }
 
-    Write-DebugSection -Title "Resource List${$(if ($Stage) { ": $Stage" } else { "" })}"
+    Write-DebugSection -Title "Resource List${$(if ($Stage) `{ ": $Stage" } else { "" })}"
     Write-DebugLog -Message "Count: $($ResourceIds.Count)" -Section "RESOURCES"
 
     foreach ($id in $ResourceIds) {
