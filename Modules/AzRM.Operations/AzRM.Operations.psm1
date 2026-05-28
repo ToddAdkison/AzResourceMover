@@ -62,7 +62,7 @@ function Wait-AsyncOperation {
         $pollCount++
         $elapsed = [math]::Round(((Get-Date) - $StartTime).TotalSeconds)
         $remaining = [math]::Round(($deadline - (Get-Date)).TotalMinutes, 1)
-        Write-Log "  Poll #$pollCount — ${elapsed}s elapsed, ${remaining}min remaining..." "INFO"
+        Write-Log "  Poll #$pollCount - ${elapsed}s elapsed, ${remaining}min remaining..." "INFO"
 
         try {
             $pollResponse = Invoke-AzRestMethod -Uri $PollingUrl -Method GET -ErrorAction Stop
@@ -232,7 +232,7 @@ function Invoke-MoveValidation {
                                 -Content    $response.Content
         }
 
-        # ── 204: synchronous pass - return immediately ─────────────────────────
+        # -- 204: synchronous pass - return immediately -------------------------
         if ($response.StatusCode -eq 204) {
             Write-Log "Validation PASSED (HTTP 204 - synchronous)." "OK"
             return [PSCustomObject]@{
@@ -243,7 +243,7 @@ function Invoke-MoveValidation {
             }
         }
 
-        # ── 202: async operation queued - poll until terminal state ─────────────
+        # -- 202: async operation queued - poll until terminal state -------------
         if ($response.StatusCode -eq 202) {
             Write-Log "HTTP 202 received - validation running asynchronously." "INFO"
 
@@ -284,7 +284,7 @@ function Invoke-MoveValidation {
             }
         }
 
-        # ── Any other status code: failure ─────────────────────────────────────
+        # -- Any other status code: failure -------------------------------------
         $errors = @()
         if ($response.Content) {
             $errBody = $response.Content | ConvertFrom-Json -ErrorAction SilentlyContinue
