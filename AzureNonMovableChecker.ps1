@@ -1,62 +1,69 @@
-# Azure Non-Movable Resource Checker
-# Reads move support data and checks against your resources CSV
-
+# Azure Resource Move Support Checker - Optimized with Hash Table
 param (
-    [string]$InputCsv = "Azureresources.csv",
-    [string]$OutputCsv = "NonMovable_Results.csv"
+    [string]$MoveSupportCsv = "move-support-resources.csv",
+    [string]$AzResourcesCsv = "Azresources.csv",
+    [string]$OutputCsv = "MoveCheck_Results.csv"
 )
 
-$MoveSupportUrl = "https://raw.githubusercontent.com/tfitzmac/resource-capabilities/master/move-support-resources.csv"
-$MoveSupportCsv = "move-support-resources.csv"
+# Import CSVs
+$moveSupport = Import-Csv -Path $MoveSupportCsv
+$azResources = Import-Csv -Path $AzResourcesCsv
 
-Write-Host "Downloading latest Azure move support data..." -ForegroundColor Cyan
+# === Build Hash Table for fast lookup ===
+$supportHash = @{}
+foreach ($item in $moveSupport) {
+    $key = $item.Resource.Trim()
+    if (-not $supportHash.ContainsKey($key)) {
+        $supportHash[$key] = $item
+    }
+}
 
-# Download the move support CSV
-Invoke-WebRequest -Uri $MoveSupportUrl -OutFile $MoveSupportCsv
+# Create output file
+"Name,Type,ResourceGroup,MoveResourceGroup,MoveSubscription,NonMovable" | 
+    Out-File -FilePath $OutputCsv -Encoding utf8
 
-# Import both CSVs
-$MoveSupport = Import-Csv -Path $MoveSupportCsv
-$Resources = Import-Csv -Path $InputCsv
+$nonMovableCount = 0
 
-# Create output file with header
-"Resource Name,Resource Type,Move Resource Group,Move Subscription,Non-Movable" | Out-File -FilePath $OutputCsv -Encoding utf8
+Write-Host "Processing $($azResources.Count) resources..." -ForegroundColor Cyan
 
-$NonMovableList = @()
+foreach ($resource in $azResources) {
+    $name = $resource.name
+    $type = $resource.type
+    $rg   = $resource.resourceGroup
 
-foreach ($res in $Resources) {
-    $resName = $res."Name"  # or $res.name depending on your CSV
-    $resType = $res."Resource Type"
+    $matched = $false
+    $typeLower = $type.ToLower()
 
-    $found = $false
-
-    foreach ($support in $MoveSupport) {
-        if ($resType -like "*$($support.Resource)*") {
+    # Check against hash table
+    foreach ($key in $supportHash.Keys) {
+        if ($typeLower -like "*$($key.ToLower())*") {
+            $support = $supportHash[$key]
+            
             $moveRG = $support."Move Resource Group"
             $moveSub = $support."Move Subscription"
-            $nonMovable = if ($moveRG -eq '0' -or $moveSub -eq '0') { "YES" } else { "NO" }
+            $isNonMovable = if ($moveRG -eq '0' -or $moveSub -eq '0') { "YES" } else { "NO" }
 
-            "$resName,$resType,$moveRG,$moveSub,$nonMovable" | Out-File -FilePath $OutputCsv -Append -Encoding utf8
+            "$name,$type,$rg,$moveRG,$moveSub,$isNonMovable" | 
+                Out-File -FilePath $OutputCsv -Append -Encoding utf8
 
-            if ($nonMovable -eq "YES") {
-                $NonMovableList += $resType
+            if ($isNonMovable -eq "YES") {
+                $nonMovableCount++
+                Write-Host "Non-movable → $name" -ForegroundColor Yellow
             }
-            $found = $true
+
+            $matched = $true
             break
         }
     }
 
-    if (-not $found) {
-        "$resName,$resType,Unknown,Unknown,Unknown" | Out-File -FilePath $OutputCsv -Append -Encoding utf8
+    if (-not $matched) {
+        "$name,$type,$rg,Unknown,Unknown,Unknown" | 
+            Out-File -FilePath $OutputCsv -Append -Encoding utf8
     }
 }
 
 # Summary
 Write-Host "`nAnalysis Complete!" -ForegroundColor Green
-Write-Host "Total resources checked: $($Resources.Count)" -ForegroundColor White
-Write-Host "Non-movable resource types found: $($NonMovableList.Count)" -ForegroundColor Red
-
-$NonMovableList | Sort-Object -Unique | ForEach-Object {
-    Write-Host " - $_" -ForegroundColor Yellow
-}
-
-Write-Host "`nFull results saved to: $OutputCsv" -ForegroundColor Cyan
+Write-Host "Total resources checked : $($azResources.Count)" -ForegroundColor White
+Write-Host "Non-movable resources   : $nonMovableCount" -ForegroundColor Red
+Write-Host "Results saved to        : $OutputCsv" -ForegroundColor Cyan
