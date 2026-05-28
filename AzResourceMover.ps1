@@ -68,7 +68,13 @@ param (
     [switch]$Move,
 
     [Parameter(Mandatory = $false)]
-    [switch]$DebugMode
+    [switch]$DebugMode,
+
+    [Parameter(Mandatory = $false)]
+    [int]$ValidationTimeoutMinutes = 15,
+
+    [Parameter(Mandatory = $false)]
+    [int]$ValidationPollIntervalSeconds = 30
 )
 
 Set-StrictMode -Version 2
@@ -109,6 +115,8 @@ if ($DebugMode) {
     Write-DebugLog -Message "TargetResourceGroupName : $TargetResourceGroupName"
     Write-DebugLog -Message "SkipDependencyCheck     : $($SkipDependencyCheck.IsPresent)"
     Write-DebugLog -Message "Move                    : $($Move.IsPresent)"
+    Write-DebugLog -Message "ValidationTimeoutMinutes      : $ValidationTimeoutMinutes"
+    Write-DebugLog -Message "ValidationPollIntervalSeconds : $ValidationPollIntervalSeconds"
 }
 
 # -- Prerequisites --
@@ -164,11 +172,13 @@ if (-not $SkipDependencyCheck) {
 
 # -- Azure API validation --
 $validationResult = Invoke-MoveValidation `
-    -SourceSubscriptionId    $SourceSubscriptionId `
-    -SourceResourceGroupName $SourceResourceGroupName `
-    -TargetSubscriptionId    $TargetSubscriptionId `
-    -TargetResourceGroupName $TargetResourceGroupName `
-    -ResourceIds             $resolvedIds
+    -SourceSubscriptionId          $SourceSubscriptionId `
+    -SourceResourceGroupName       $SourceResourceGroupName `
+    -TargetSubscriptionId          $TargetSubscriptionId `
+    -TargetResourceGroupName       $TargetResourceGroupName `
+    -ResourceIds                   $resolvedIds `
+    -ValidationTimeoutMinutes      $ValidationTimeoutMinutes `
+    -ValidationPollIntervalSeconds $ValidationPollIntervalSeconds
 
 # -- Assemble and display report --
 $report = New-Report `

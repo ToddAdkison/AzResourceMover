@@ -15,16 +15,164 @@ $ErrorActionPreference = "Stop"
 # Body is serialized manually to guarantee 'resources' is a flat JSON array.
 # (Invoke-AzResourceAction -Parameters wraps nested arrays in an extra object
 # layer, causing: "Unexpected character encountered while parsing value: {")
+#
+# Flow:
+#   POST validateMoveResources
+#     204 No Content  -> validation complete, passed  (return immediately)
+#     202 Accepted    -> async operation started      (poll until Succeeded/Failed)
+#     other           -> validation failed            (return errors)
 # ------------------------------------------------------------------------------
+
+function Wait-AsyncOperation {
+<#
+.SYNOPSIS
+    Private helper. Polls an Azure async operation URL until it reaches a
+    terminal state (Succeeded, Failed, Canceled) or the timeout is reached.
+.DESCRIPTION
+    Azure returns an Azure-AsyncOperation or Location header on a 202 response.
+    This function polls that URL on a configurable interval, logging progress,
+    and returns once a definitive outcome is known.
+.PARAMETER PollingUrl
+    Full URL returned in the Azure-AsyncOperation or Location response header.
+.PARAMETER TimeoutMinutes
+    Maximum time to wait before returning a TimedOut failure.
+.PARAMETER PollIntervalSeconds
+    Seconds to wait between each poll request.
+.PARAMETER StartTime
+    The DateTime the original POST was made, used for elapsed time display.
+.OUTPUTS
+    PSCustomObject with Passed [bool], FinalStatus [string], and Errors [array].
+#>
+    param(
+        [string]   $PollingUrl,
+        [int]      $TimeoutMinutes,
+        [int]      $PollIntervalSeconds,
+        [datetime] $StartTime
+    )
+
+    $deadline  = $StartTime.AddMinutes($TimeoutMinutes)
+    $pollCount = 0
+
+    Write-Log "  Async operation started. Polling every ${PollIntervalSeconds}s (timeout: ${TimeoutMinutes}min)..." "INFO"
+    Write-DebugLog -Message "Polling URL: $PollingUrl" -Section "POLL"
+
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Seconds $PollIntervalSeconds
+
+        $pollCount++
+        $elapsed = [math]::Round(((Get-Date) - $StartTime).TotalSeconds)
+        $remaining = [math]::Round(($deadline - (Get-Date)).TotalMinutes, 1)
+        Write-Log "  Poll #$pollCount — ${elapsed}s elapsed, ${remaining}min remaining..." "INFO"
+
+        try {
+            $pollResponse = Invoke-AzRestMethod -Uri $PollingUrl -Method GET -ErrorAction Stop
+
+            Write-DebugLog -Message "Poll #$pollCount status code: $($pollResponse.StatusCode)" -Section "POLL"
+
+            if (Test-DebugEnabled) {
+                Write-DebugResponse -StatusCode $pollResponse.StatusCode `
+                                    -Headers    $pollResponse.Headers `
+                                    -Content    $pollResponse.Content
+            }
+
+            if (-not $pollResponse.Content) { continue }
+
+            $pollBody = $pollResponse.Content | ConvertFrom-Json -ErrorAction SilentlyContinue
+            if (-not $pollBody -or -not $pollBody.PSObject.Properties.Name -contains 'status') { continue }
+
+            $status = $pollBody.status
+            Write-Log "  Azure status: $status" "INFO"
+            Write-DebugLog -Message "Azure async status: $status" -Section "POLL"
+
+            switch ($status) {
+                "Succeeded" {
+                    Write-Log "Validation SUCCEEDED after ${elapsed}s." "OK"
+                    return [PSCustomObject]@{
+                        Passed      = $true
+                        FinalStatus = $status
+                        Errors      = @()
+                    }
+                }
+                "Failed" {
+                    $errors = @()
+                    if ($pollBody.PSObject.Properties.Name -contains 'error') {
+                        $err = $pollBody.error
+                        if ($err.PSObject.Properties.Name -contains 'details' -and $err.details) {
+                            $errors = @($err.details | ForEach-Object {
+                                [PSCustomObject]@{
+                                    Resource = if ($_.PSObject.Properties.Name -contains 'target')  { $_.target  } else { "N/A" }
+                                    Code     = if ($_.PSObject.Properties.Name -contains 'code')    { $_.code    } else { "Unknown" }
+                                    Message  = if ($_.PSObject.Properties.Name -contains 'message') { $_.message } else { "No message" }
+                                }
+                            })
+                        } else {
+                            $errors = @([PSCustomObject]@{
+                                Resource = "N/A"
+                                Code     = if ($err.PSObject.Properties.Name -contains 'code')    { $err.code    } else { "Unknown" }
+                                Message  = if ($err.PSObject.Properties.Name -contains 'message') { $err.message } else { "No message" }
+                            })
+                        }
+                    }
+                    Write-Log "Validation FAILED after ${elapsed}s." "ERROR"
+                    return [PSCustomObject]@{
+                        Passed      = $false
+                        FinalStatus = $status
+                        Errors      = $errors
+                    }
+                }
+                "Canceled" {
+                    Write-Log "Validation was CANCELED after ${elapsed}s." "WARN"
+                    return [PSCustomObject]@{
+                        Passed      = $false
+                        FinalStatus = $status
+                        Errors      = @([PSCustomObject]@{
+                            Resource = "N/A"
+                            Code     = "Canceled"
+                            Message  = "The async validation operation was canceled by Azure."
+                        })
+                    }
+                }
+                default {
+                    # InProgress or unknown - keep polling
+                    continue
+                }
+            }
+        }
+        catch {
+            Write-Log "  Poll #$pollCount failed: $($_.Exception.Message)" "WARN"
+            Write-DebugLog -Message "Poll #$pollCount exception: $($_.Exception.Message)" -Section "POLL"
+        }
+    }
+
+    # Timeout reached
+    $elapsed = [math]::Round(((Get-Date) - $StartTime).TotalSeconds)
+    Write-Log "Validation timed out after ${elapsed}s (limit: ${TimeoutMinutes}min)." "ERROR"
+    Write-DebugLog -Message "Polling timed out after ${elapsed}s." -Section "POLL"
+
+    return [PSCustomObject]@{
+        Passed      = $false
+        FinalStatus = "TimedOut"
+        Errors      = @([PSCustomObject]@{
+            Resource = "N/A"
+            Code     = "ValidationTimedOut"
+            Message  = "Validation did not complete within $TimeoutMinutes minutes. Increase -ValidationTimeoutMinutes or retry."
+        })
+    }
+}
 
 function Invoke-MoveValidation {
 <#
 .SYNOPSIS
-    Calls the Azure validateMoveResources REST API to check move eligibility.
+    Calls the Azure validateMoveResources REST API and waits for a definitive result.
 .DESCRIPTION
     Uses Invoke-AzRestMethod with an explicitly serialized JSON body to avoid
     the array-wrapping bug in Invoke-AzResourceAction -Parameters.
-    HTTP 202 (Accepted) and 204 (No Content) both indicate a passing result.
+
+    204 No Content  -> validation complete, returns Passed = $true immediately.
+    202 Accepted    -> async operation started. Polls the Azure-AsyncOperation URL
+                       every -ValidationPollIntervalSeconds until Azure returns
+                       Succeeded or Failed (or the timeout is reached).
+
     Debug logging is automatic when AzRM.Debug has been initialised.
 .PARAMETER SourceSubscriptionId
     Subscription containing the source resource group.
@@ -36,15 +184,22 @@ function Invoke-MoveValidation {
     Name of the target resource group.
 .PARAMETER ResourceIds
     Array of top-level resource IDs to validate.
+.PARAMETER ValidationTimeoutMinutes
+    Maximum minutes to wait for a Succeeded/Failed response. Default: 15.
+.PARAMETER ValidationPollIntervalSeconds
+    Seconds between each poll request when waiting on a 202. Default: 30.
 .OUTPUTS
-    PSCustomObject with Passed [bool], StatusCode [int], and Errors [array].
+    PSCustomObject with Passed [bool], StatusCode [int], FinalStatus [string],
+    and Errors [array].
 #>
     param(
         [string]   $SourceSubscriptionId,
         [string]   $SourceResourceGroupName,
         [string]   $TargetSubscriptionId,
         [string]   $TargetResourceGroupName,
-        [string[]] $ResourceIds
+        [string[]] $ResourceIds,
+        [int]      $ValidationTimeoutMinutes      = 15,
+        [int]      $ValidationPollIntervalSeconds = 30
     )
 
     Write-DebugContextSwitch -SubscriptionId $SourceSubscriptionId -CalledFrom "Invoke-MoveValidation"
@@ -57,14 +212,15 @@ function Invoke-MoveValidation {
         targetResourceGroup = $targetRgId
     } | ConvertTo-Json -Depth 5 -Compress
 
-    $apiPath = "/subscriptions/$SourceSubscriptionId/resourceGroups/" +
-               "$SourceResourceGroupName/validateMoveResources?api-version=2021-04-01"
+    $apiPath  = "/subscriptions/$SourceSubscriptionId/resourceGroups/" +
+                "$SourceResourceGroupName/validateMoveResources?api-version=2021-04-01"
+    $startTime = Get-Date
 
-    Write-Log "Calling validateMoveResources API (may take up to 15 minutes)..." "INFO"
+    Write-Log "Calling validateMoveResources API..." "INFO"
 
     if (Test-DebugEnabled) {
-        Write-DebugSection  -Title "Invoke-MoveValidation"
-        Write-DebugRequest  -ApiPath $apiPath -Method "POST" -Body $body
+        Write-DebugSection -Title "Invoke-MoveValidation"
+        Write-DebugRequest -ApiPath $apiPath -Method "POST" -Body $body
     }
 
     try {
@@ -76,43 +232,96 @@ function Invoke-MoveValidation {
                                 -Content    $response.Content
         }
 
-        # 202 Accepted   = async validation queued (pass)
-        # 204 No Content = sync validation passed
-        $passed = $response.StatusCode -in @(202, 204)
+        # ── 204: synchronous pass - return immediately ─────────────────────────
+        if ($response.StatusCode -eq 204) {
+            Write-Log "Validation PASSED (HTTP 204 - synchronous)." "OK"
+            return [PSCustomObject]@{
+                Passed      = $true
+                StatusCode  = 204
+                FinalStatus = "Succeeded"
+                Errors      = @()
+            }
+        }
 
-        $errors = if (-not $passed -and $response.Content) {
+        # ── 202: async operation queued - poll until terminal state ─────────────
+        if ($response.StatusCode -eq 202) {
+            Write-Log "HTTP 202 received - validation running asynchronously." "INFO"
+
+            # Azure returns the polling URL in Azure-AsyncOperation or Location header
+            $pollingUrl = $null
+            if ($response.Headers -and $response.Headers['Azure-AsyncOperation']) {
+                $pollingUrl = $response.Headers['Azure-AsyncOperation']
+            } elseif ($response.Headers -and $response.Headers['Location']) {
+                $pollingUrl = $response.Headers['Location']
+            }
+
+            if (-not $pollingUrl) {
+                Write-Log "202 received but no polling URL found in response headers." "ERROR"
+                Write-DebugLog -Message "Headers: $($response.Headers | ConvertTo-Json)" -Section "POLL"
+                return [PSCustomObject]@{
+                    Passed      = $false
+                    StatusCode  = 202
+                    FinalStatus = "NoPollingUrl"
+                    Errors      = @([PSCustomObject]@{
+                        Resource = "N/A"
+                        Code     = "NoPollingUrl"
+                        Message  = "Azure returned 202 but did not include an Azure-AsyncOperation or Location header."
+                    })
+                }
+            }
+
+            $asyncResult = Wait-AsyncOperation `
+                -PollingUrl            $pollingUrl `
+                -TimeoutMinutes        $ValidationTimeoutMinutes `
+                -PollIntervalSeconds   $ValidationPollIntervalSeconds `
+                -StartTime             $startTime
+
+            return [PSCustomObject]@{
+                Passed      = $asyncResult.Passed
+                StatusCode  = 202
+                FinalStatus = $asyncResult.FinalStatus
+                Errors      = $asyncResult.Errors
+            }
+        }
+
+        # ── Any other status code: failure ─────────────────────────────────────
+        $errors = @()
+        if ($response.Content) {
             $errBody = $response.Content | ConvertFrom-Json -ErrorAction SilentlyContinue
-            if ($errBody.error.details) {
-                @($errBody.error.details | ForEach-Object {
-                    [PSCustomObject]@{
-                        Resource = $_.target
-                        Code     = $_.code
-                        Message  = $_.message
-                    }
-                })
-            } elseif ($errBody.error) {
-                @([PSCustomObject]@{
-                    Resource = "N/A"
-                    Code     = $errBody.error.code
-                    Message  = $errBody.error.message
-                })
-            } else { @() }
-        } else { @() }
+            if ($errBody -and $errBody.error) {
+                if ($errBody.error.PSObject.Properties.Name -contains 'details' -and $errBody.error.details) {
+                    $errors = @($errBody.error.details | ForEach-Object {
+                        [PSCustomObject]@{
+                            Resource = $_.target
+                            Code     = $_.code
+                            Message  = $_.message
+                        }
+                    })
+                } else {
+                    $errors = @([PSCustomObject]@{
+                        Resource = "N/A"
+                        Code     = $errBody.error.code
+                        Message  = $errBody.error.message
+                    })
+                }
+            }
+        }
 
+        Write-Log "Validation FAILED (HTTP $($response.StatusCode))." "ERROR"
         return [PSCustomObject]@{
-            Passed     = $passed
-            StatusCode = $response.StatusCode
-            Errors     = $errors
+            Passed      = $false
+            StatusCode  = $response.StatusCode
+            FinalStatus = "Failed"
+            Errors      = $errors
         }
     }
     catch {
-        if (Test-DebugEnabled) {
-            Write-DebugLog -Message "Exception: $($_.Exception.Message)" -Section "VALIDATION"
-        }
+        Write-DebugLog -Message "Exception: $($_.Exception.Message)" -Section "VALIDATION"
         return [PSCustomObject]@{
-            Passed     = $false
-            StatusCode = 0
-            Errors     = @([PSCustomObject]@{
+            Passed      = $false
+            StatusCode  = 0
+            FinalStatus = "RequestFailed"
+            Errors      = @([PSCustomObject]@{
                 Resource = "N/A"
                 Code     = "RequestFailed"
                 Message  = $_.Exception.Message
