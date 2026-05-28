@@ -197,7 +197,7 @@ function Write-DebugResourceList {
 
     if ($script:DebugLogPath -eq "") { return }
 
-    Write-DebugSection -Title "Resource List${$(if ($Stage) `{ ": $Stage" } else { "" })}"
+    Write-DebugSection -Title "Resource List${$(if ($Stage) { ": $Stage" } else { "" })}"
     Write-DebugLog -Message "Count: $($ResourceIds.Count)" -Section "RESOURCES"
 
     foreach ($id in $ResourceIds) {
@@ -305,7 +305,7 @@ function Write-DebugResponse {
     } else { "(empty)" }
 
     $headerLines = if ($Headers) {
-        ($Headers.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }) -join "`n"
+        ($Headers | ForEach-Object { "$($_.Key): $(@($_.Value) -join ', ')" }) -join "`n"
     } else { "(none)" }
 
     $divider = "-" * 80

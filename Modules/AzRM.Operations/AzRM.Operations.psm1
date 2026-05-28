@@ -243,12 +243,23 @@ function Invoke-MoveValidation {
         if ($response.StatusCode -eq 202) {
             Write-Log "HTTP 202 received - validation running asynchronously." "INFO"
 
-            # Azure returns the polling URL in Azure-AsyncOperation or Location header
+            # Azure returns the polling URL in Azure-AsyncOperation or Location header.
+            # $response.Headers is HttpResponseHeaders which does not support [] indexing -
+            # it must be iterated as KeyValuePair<string, IEnumerable<string>>.
             $pollingUrl = $null
-            if ($response.Headers -and $response.Headers['Azure-AsyncOperation']) {
-                $pollingUrl = $response.Headers['Azure-AsyncOperation']
-            } elseif ($response.Headers -and $response.Headers['Location']) {
-                $pollingUrl = $response.Headers['Location']
+            foreach ($header in $response.Headers) {
+                if ($header.Key -eq 'Azure-AsyncOperation') {
+                    $pollingUrl = @($header.Value)[0]
+                    break
+                }
+            }
+            if (-not $pollingUrl) {
+                foreach ($header in $response.Headers) {
+                    if ($header.Key -eq 'Location') {
+                        $pollingUrl = @($header.Value)[0]
+                        break
+                    }
+                }
             }
 
             if (-not $pollingUrl) {
